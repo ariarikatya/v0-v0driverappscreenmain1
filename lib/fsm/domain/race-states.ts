@@ -1,0 +1,7 @@
+export type RaceState =
+  | "RACE_OFFLINE"
+  | "RACE_WAITING_START"
+  | "RACE_BOARDING"
+  | "RACE_IN_TRANSIT"
+  | "RACE_ARRIVED_STOP"
+  | "RACE_FINISHED";

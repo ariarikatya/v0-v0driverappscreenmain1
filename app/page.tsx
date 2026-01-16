@@ -1,5 +1,4 @@
 "use client"
-
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,7 +15,8 @@ import { GeoTrackerIndicator } from "@/components/geo-tracker-indicator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { QueueQRScanner } from "@/components/queue-qr-scanner"
 import { CashQRDialog } from "@/components/cash-qr-dialog"
-import { RACE_STATE_TO_PANELS, TRIP_STATUS_TO_RACE_STATE } from "@/lib/fsm-types"
+import { computeScreenState, computeUIConfig } from "@/lib/screen-fsm"
+import { mapTripStatusToRaceState } from "@/lib/legacy-trip-status"
 
 const STATE = {
   PREP_IDLE: "PREP_IDLE",
@@ -270,8 +270,6 @@ export default function DriverDashboard() {
   const [areSeatsLocked, setAreSeatsLocked] = useState(true) // Seats start locked
   const [isGeoTrackerActive, setIsGeoTrackerActive] = useState(false)
   const [showStopHistory, setShowStopHistory] = useState(false)
-  const currentRaceState = TRIP_STATUS_TO_RACE_STATE[tripStatus]
-  const panelVisibility = RACE_STATE_TO_PANELS[currentRaceState]
   const scanInProgressRef = useRef(false)
 
   // ADDED: isDepositAdded state and corresponding setter
@@ -563,7 +561,7 @@ export default function DriverDashboard() {
 
     setVisitedStops((prev) => new Set(prev).add(currentStopIndex))
 
-    // ИСПРАВЛЕНО: Подсчет статистики ПЕРЕД переходом
+    // Подсчет статистики ПЕРЕД переходом
     const stopBookings = bookings.filter((b) => b.fromStopIndex === currentStopIndex)
 
     const reservedCount = stopBookings
@@ -590,7 +588,7 @@ export default function DriverDashboard() {
       setTripStatus(STATE.FINISHED)
     } else {
       // Промежуточная остановка - переходим в BOARDING для посадки
-      setTripStatus(STATE.BOARDING) // ИСПРАВЛЕНО: было ROUTE_READY
+      setTripStatus(STATE.BOARDING)
     }
   }
 
@@ -702,11 +700,10 @@ export default function DriverDashboard() {
     if (tripStatus === STATE.PREP_IDLE) return t.prepareTrip
 
     if (tripStatus === STATE.PREP_TIMER) {
-      return `${t.prepareTrip}  ${formatTimer(prepareTimer)}`
+      return `${t.prepareTrip} ${formatTimer(prepareTimer)}`
     }
 
     if (tripStatus === STATE.BOARDING) {
-      // ИСПРАВЛЕНО: Показываем разный текст для первой и промежуточных остановок
       if (currentStopIndex === 0) {
         return t.startBoarding // "Начать посадку"
       } else {
@@ -755,7 +752,13 @@ export default function DriverDashboard() {
     } else if (tripStatus === STATE.PREP_TIMER) {
       clickStartBoarding()
     } else if (tripStatus === STATE.BOARDING) {
-      clickReadyForRoute()
+      if (currentStopIndex === 0) {
+        // Первая остановка - отправление
+        clickStartRoute()
+      } else {
+        // Промежуточная остановка - завершение посадки
+        clickReadyForRoute()
+      }
     } else if (tripStatus === STATE.ROUTE_READY) {
       clickStartRoute()
     } else if (tripStatus === STATE.IN_ROUTE) {
@@ -1577,13 +1580,15 @@ export default function DriverDashboard() {
       .map((_, i) => <User key={i} className="h-4 w-4" />)
   }
 
+  const panelVisibility = {
+    queue: tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY,
+    reservation: tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY || tripStatus === STATE.IN_ROUTE,
+    cash: tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY,
+  }
+
   const isPanelsDisabled = (() => {
     // Пользователь не подтвержден - всегда блокируем
     if (userStatus !== "confirmed") return true
-
-    // Проверяем состояние гонки
-    const raceState = TRIP_STATUS_TO_RACE_STATE[tripStatus]
-    const panelVisibility = RACE_STATE_TO_PANELS[raceState]
 
     // Если панели должны быть видны по FSM, проверяем areSeatsLocked
     if (panelVisibility.reservation || panelVisibility.queue) {
@@ -1895,7 +1900,7 @@ export default function DriverDashboard() {
 
       <div className="px-2 pt-4 space-y-6">
         {selectedTrip &&
-          panelVisibility.cash && ( // И<bos>ВЛЕНО: добавлено panelVisibility.cash
+          panelVisibility.cash && ( // ОСТАВИЛ КАК БЫЛО - boolean!
             <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
               <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
               <div className="grid grid-cols-4 gap-3">
@@ -1941,8 +1946,7 @@ export default function DriverDashboard() {
             </Card>
           )}
 
-        {/* CHANGE: Fixed conditional check and removed backslashes */}
-        {panelVisibility.queue && selectedTrip && 6 - manualOccupied - acceptedBookingsCount > 0 && (
+        {tripStatus === STATE.BOARDING && panelVisibility.queue && selectedTrip && 6 - manualOccupied - acceptedBookingsCount > 0 && (
           <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
