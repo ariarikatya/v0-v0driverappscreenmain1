@@ -1,4 +1,5 @@
 "use client"
+
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,8 +16,7 @@ import { GeoTrackerIndicator } from "@/components/geo-tracker-indicator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { QueueQRScanner } from "@/components/queue-qr-scanner"
 import { CashQRDialog } from "@/components/cash-qr-dialog"
-import { computeScreenState, computeUIConfig } from "@/lib/screen-fsm"
-import { mapTripStatusToRaceState } from "@/lib/legacy-trip-status"
+import { RACE_STATE_TO_PANELS, TRIP_STATUS_TO_RACE_STATE } from "@/lib/fsm-types"
 
 const STATE = {
   PREP_IDLE: "PREP_IDLE",
@@ -270,6 +270,8 @@ export default function DriverDashboard() {
   const [areSeatsLocked, setAreSeatsLocked] = useState(true) // Seats start locked
   const [isGeoTrackerActive, setIsGeoTrackerActive] = useState(false)
   const [showStopHistory, setShowStopHistory] = useState(false)
+  const currentRaceState = TRIP_STATUS_TO_RACE_STATE[tripStatus]
+  const panelVisibility = RACE_STATE_TO_PANELS[currentRaceState]
   const scanInProgressRef = useRef(false)
 
   // ADDED: isDepositAdded state and corresponding setter
@@ -554,43 +556,43 @@ export default function DriverDashboard() {
   }
 
   const clickArrivedAtStop = () => {
-    if (tripStatus !== STATE.IN_ROUTE) {
-      console.error("[v0] Illegal transition: clickArrivedAtStop from", tripStatus)
-      return
-    }
-
-    setVisitedStops((prev) => new Set(prev).add(currentStopIndex))
-
-    // Подсчет статистики ПЕРЕД переходом
-    const stopBookings = bookings.filter((b) => b.fromStopIndex === currentStopIndex)
-
-    const reservedCount = stopBookings
-      .filter((b) => !b.scanned)
-      .reduce((sum, b) => sum + (b.passengerCount || b.count || 1), 0)
-
-    const boardedCount = stopBookings
-      .filter((b) => b.scanned)
-      .reduce((sum, b) => sum + (b.passengerCount || b.count || 1), 0)
-
-    setStopHistoryMap((prev) => {
-      const newMap = new Map(prev)
-      newMap.set(currentStopIndex, {
-        stopId: currentStopIndex,
-        reserved: reservedCount,
-        boarded: boardedCount,
-      })
-      return newMap
-    })
-
-    // Проверяем, конечная ли это остановка
-    if (currentStopIndex === stops.length - 1) {
-      // Конечная остановка - завершаем рейс
-      setTripStatus(STATE.FINISHED)
-    } else {
-      // Промежуточная остановка - переходим в BOARDING для посадки
-      setTripStatus(STATE.BOARDING)
-    }
+  if (tripStatus !== STATE.IN_ROUTE) {
+    console.error("[v0] Illegal transition: clickArrivedAtStop from", tripStatus)
+    return
   }
+
+  setVisitedStops((prev) => new Set(prev).add(currentStopIndex))
+
+  // Подсчет статистики ПЕРЕД переходом
+  const stopBookings = bookings.filter((b) => b.fromStopIndex === currentStopIndex)
+
+  const reservedCount = stopBookings
+    .filter((b) => !b.scanned)
+    .reduce((sum, b) => sum + (b.passengerCount || b.count || 1), 0)
+
+  const boardedCount = stopBookings
+    .filter((b) => b.scanned)
+    .reduce((sum, b) => sum + (b.passengerCount || b.count || 1), 0)
+
+  setStopHistoryMap((prev) => {
+    const newMap = new Map(prev)
+    newMap.set(currentStopIndex, {
+      stopId: currentStopIndex,
+      reserved: reservedCount,
+      boarded: boardedCount,
+    })
+    return newMap
+  })
+
+  // Проверяем, конечная ли это остановка
+  if (currentStopIndex === stops.length - 1) {
+    // Конечная остановка - завершаем рейс
+    setTripStatus(STATE.FINISHED)
+  } else {
+    // Промежуточная остановка - переходим в BOARDING для посадки
+    setTripStatus(STATE.BOARDING)
+  }
+}
 
   const clickFinish = () => {
     if (tripStatus !== "FINISHED") {
@@ -697,37 +699,37 @@ export default function DriverDashboard() {
     // НЕ ОЧИЩАЕМ localStorage здесь - он автоматически обновится через useEffect
   }
   const getTripButtonText = () => {
-    if (tripStatus === STATE.PREP_IDLE) return t.prepareTrip
+  if (tripStatus === STATE.PREP_IDLE) return t.prepareTrip
 
-    if (tripStatus === STATE.PREP_TIMER) {
-      return `${t.prepareTrip} ${formatTimer(prepareTimer)}`
-    }
-
-    if (tripStatus === STATE.BOARDING) {
-      if (currentStopIndex === 0) {
-        return t.startBoarding // "Начать посадку"
-      } else {
-        return language === "ru" ? "Посадка завершена" : "Boarding Complete"
-      }
-    }
-
-    if (tripStatus === STATE.ROUTE_READY) {
-      if (currentStopIndex === 0) {
-        return language === "ru" ? "Отправиться" : "Depart"
-      } else {
-        return language === "ru" ? "Продолжить рейс" : "Continue Trip"
-      }
-    }
-
-    if (tripStatus === STATE.IN_ROUTE) {
-      const stopName = stops[currentStopIndex]?.name || ""
-      return language === "ru" ? `Прибыл ${stopName}` : `Arrived ${stopName}`
-    }
-
-    if (tripStatus === STATE.FINISHED) return t.finishTrip
-
-    return ""
+  if (tripStatus === STATE.PREP_TIMER) {
+    return `${t.prepareTrip} ${formatTimer(prepareTimer)}`
   }
+
+  if (tripStatus === STATE.BOARDING) {
+    if (currentStopIndex === 0) {
+      return t.startBoarding // "Начать посадку"
+    } else {
+      return language === "ru" ? "Посадка завершена" : "Boarding Complete"
+    }
+  }
+
+  if (tripStatus === STATE.ROUTE_READY) {
+    if (currentStopIndex === 0) {
+      return language === "ru" ? "Отправиться" : "Depart"
+    } else {
+      return language === "ru" ? "Продолжить рейс" : "Continue Trip"
+    }
+  }
+
+  if (tripStatus === STATE.IN_ROUTE) {
+    const stopName = stops[currentStopIndex]?.name || ""
+    return language === "ru" ? `Прибыл ${stopName}` : `Arrived ${stopName}`
+  }
+
+  if (tripStatus === STATE.FINISHED) return t.finishTrip
+
+  return ""
+}
 
   const getTripStatusEmoji = () => {
     if (tripStatus === STATE.IN_ROUTE) return "🚌"
@@ -747,26 +749,26 @@ export default function DriverDashboard() {
   }
 
   const handleTripButton = () => {
-    if (tripStatus === STATE.PREP_IDLE) {
-      clickStartPrep()
-    } else if (tripStatus === STATE.PREP_TIMER) {
-      clickStartBoarding()
-    } else if (tripStatus === STATE.BOARDING) {
-      if (currentStopIndex === 0) {
-        // Первая остановка - отправление
-        clickStartRoute()
-      } else {
-        // Промежуточная остановка - завершение посадки
-        clickReadyForRoute()
-      }
-    } else if (tripStatus === STATE.ROUTE_READY) {
+  if (tripStatus === STATE.PREP_IDLE) {
+    clickStartPrep()
+  } else if (tripStatus === STATE.PREP_TIMER) {
+    clickStartBoarding()
+  } else if (tripStatus === STATE.BOARDING) {
+    if (currentStopIndex === 0) {
+      // Первая остановка - отправление
       clickStartRoute()
-    } else if (tripStatus === STATE.IN_ROUTE) {
-      clickArrivedAtStop()
-    } else if (tripStatus === STATE.FINISHED) {
-      clickFinish()
+    } else {
+      // Промежуточная остановка - завершение посадки
+      clickReadyForRoute()
     }
+  } else if (tripStatus === STATE.ROUTE_READY) {
+    clickStartRoute()
+  } else if (tripStatus === STATE.IN_ROUTE) {
+    clickArrivedAtStop()
+  } else if (tripStatus === STATE.FINISHED) {
+    clickFinish()
   }
+}
 
   const handleOpenBookingScanner = (bookingId: number) => {
     if (areSeatsLocked) {
@@ -1580,15 +1582,13 @@ export default function DriverDashboard() {
       .map((_, i) => <User key={i} className="h-4 w-4" />)
   }
 
-  const panelVisibility = {
-    queue: tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY,
-    reservation: tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY || tripStatus === STATE.IN_ROUTE,
-    cash: tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY,
-  }
-
   const isPanelsDisabled = (() => {
     // Пользователь не подтвержден - всегда блокируем
     if (userStatus !== "confirmed") return true
+
+    // Проверяем состояние гонки
+    const raceState = TRIP_STATUS_TO_RACE_STATE[tripStatus]
+    const panelVisibility = RACE_STATE_TO_PANELS[raceState]
 
     // Если панели должны быть видны по FSM, проверяем areSeatsLocked
     if (panelVisibility.reservation || panelVisibility.queue) {
@@ -1900,9 +1900,9 @@ export default function DriverDashboard() {
 
       <div className="px-2 pt-4 space-y-6">
         {selectedTrip &&
-          panelVisibility.cash && ( // ОСТАВИЛ КАК БЫЛО - boolean!
-            <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-              <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
+  panelVisibility.cash && ( // ОСТАВИЛ КАК БЫЛО - boolean!
+    <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+      <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
               <div className="grid grid-cols-4 gap-3">
                 <div className="text-center p-4 rounded-lg bg-secondary">
                   <div className="flex items-center justify-center gap-1 mb-2">
@@ -1946,7 +1946,8 @@ export default function DriverDashboard() {
             </Card>
           )}
 
-        {tripStatus === STATE.BOARDING && panelVisibility.queue && selectedTrip && 6 - manualOccupied - acceptedBookingsCount > 0 && (
+        {/* CHANGE: Fixed conditional check and removed backslashes */}
+        {panelVisibility.queue && selectedTrip && 6 - manualOccupied - acceptedBookingsCount > 0 && (
           <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
